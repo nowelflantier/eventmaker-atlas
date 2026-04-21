@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Eventmaker Atlas Overlay",
+  "version": "1.0.0",
+  "description": "Surcouche Atlas en lecture seule dans Eventmaker.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Eventmaker Atlas"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://app.eventmaker.io/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.eventmaker.io/*"
+      ],
+      "js": [
+        "lib/eventmaker-urls.js",
+        "lib/eventmaker-context.js",
+        "lib/eventmaker-api.js",
+        "lib/storage.js",
+        "lib/atlas-core.js",
+        "lib/palette.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "mermaid-bridge.js"
+      ],
+      "matches": [
+        "https://app.eventmaker.io/*"
+      ]
+    }
+  ]
+}
