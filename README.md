@@ -87,3 +87,18 @@ Le refresh reconstruit un snapshot event-level en appelant notamment :
 Ce repo ne versionne que l'extension.
 
 Le dossier `old/` est gardé localement comme archive de secours et n'est pas commité.
+
+## Discipline de commit
+
+Règle de travail adoptée :
+
+- à la fin de chaque grosse itération fonctionnelle, créer un commit ;
+- pousser régulièrement ces commits sur GitHub pour garder une base de référence exploitable ;
+- préférer des commits thématiques et lisibles plutôt qu'un seul gros commit flou ;
+- ne pas utiliser `old/` comme substitut à l'historique git.
+
+Exemples de messages attendus :
+
+- `Add email template dependency graph`
+- `Link segments to emails`
+- `Restore legacy header Atlas button behavior`
