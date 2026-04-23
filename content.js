@@ -532,6 +532,12 @@
         border-color: #efb8b2;
       }
 
+      .atlas-badge.is-api {
+        background: #f4efe2;
+        color: #8a6a2f;
+        border-color: #e6d7b0;
+      }
+
       .atlas-badge.is-info {
         background: #d6f0ec;
         color: #0f5f59;
@@ -1156,6 +1162,9 @@
     state.isOpen = !state.isOpen;
     saveUiState();
     render();
+    if (state.isOpen && state.context.hasEventContext && !state.cache && !state.atlas && !state.isLoading) {
+      refreshSnapshot();
+    }
   }
 
   function closePanel() {
@@ -1476,6 +1485,13 @@
 
   function renderEmptyState() {
     var eventId = state.context.eventId || "";
+    if (state.isLoading) {
+      return '<section class="atlas-card" style="text-align:center;padding:32px 24px;">'
+        + '<div style="font-size:36px;margin-bottom:12px;opacity:0.4;">&#8635;</div>'
+        + '<h3 style="font-size:15px;font-weight:600;color:var(--atlas-text);text-transform:none;letter-spacing:0;margin-bottom:8px;">Premier chargement en cours</h3>'
+        + '<p class="atlas-note" style="margin-bottom:20px;font-size:13px;">Atlas récupère les champs, segments, formulaires et pages de cet événement.<br><span style="font-size:11px;opacity:0.7;">Événement&nbsp;: ' + escapeHtml(eventId) + '</span></p>'
+        + '</section>';
+    }
     return '<section class="atlas-card" style="text-align:center;padding:32px 24px;">'
       + '<div style="font-size:36px;margin-bottom:12px;opacity:0.4;">&#128194;</div>'
       + '<h3 style="font-size:15px;font-weight:600;color:var(--atlas-text);text-transform:none;letter-spacing:0;margin-bottom:8px;">Aucune donn\u00E9e charg\u00E9e</h3>'
@@ -2358,9 +2374,12 @@
     const impactAnalysis = window.AtlasCore.getFieldImpactAnalysis(state.atlas, field);
     const usageDetails = window.AtlasCore.getFieldUsageDetails(state.atlas, field);
     const impactTotal = impactAnalysis.fields.length + impactAnalysis.segments.length + impactAnalysis.forms.length + impactAnalysis.emails.length + impactAnalysis.automations.length;
+    const hasCascadeImpact = impactAnalysis.levels.some(([depth]) => depth > 1);
     const anomalies = [];
     const dependencyRows = usageDetails.dependencies;
-    const usageRows = usageDetails.usages.map((ref) => ({
+    const directReaderRows = usageDetails.usages
+      .filter((ref) => ref.from !== "field" && ref.from !== "field_child")
+      .map((ref) => ({
       title: ref.label || ref.key,
       subtitle: ref.from === "automation"
         ? ref.context ? `automation · ${ref.context}` : "automation"
@@ -2404,7 +2423,7 @@
     });
 
     const fieldKindLabel = field.fieldKind === "native" ? "natif" : field.fieldKind === "api_property" ? "api/liquid" : "custom";
-    const fieldKindBadge = field.fieldKind === "native" ? "is-neutral" : field.fieldKind === "api_property" ? "is-warning" : "is-info";
+    const fieldKindBadge = field.fieldKind === "native" ? "is-neutral" : field.fieldKind === "api_property" ? "is-api" : "is-info";
     const badges = [
       renderBadge(field.type, "is-info"),
       renderBadge(fieldKindLabel, fieldKindBadge)
@@ -2445,6 +2464,10 @@
             </div>
           </div>
         </div>
+        ${anomalies.length > 0 ? renderSection("Alertes", "Anomalies détectées dans la formule Liquid ou références impossibles à résoudre.", renderRefList(
+          anomalies.map((entry) => ({ title: entry, key: "à vérifier" })),
+          "Aucune anomalie détectée."
+        )) : ""}
         ${renderSection("Usages directs", "Où ce champ est utilisé directement aujourd’hui: collecte, segments, pages website, autres calculs et conditions.", renderRefList([
           coverage.forms > 0 ? { title: "Collecté dans les formulaires", key: `${coverage.forms}` } : null,
           coverage.segments > 0 ? { title: "Utilisé dans les segments", key: `${coverage.segments}` } : null,
@@ -2470,6 +2493,10 @@
           calculatedUsageRows,
           "Aucun champ calculé lié."
         )) : ""}
+        ${directReaderRows.length > 0 ? renderSection("Qui lit ce champ directement", "Objets non calculés qui consomment directement ce champ.", renderRefList(
+          directReaderRows.map((row) => ({ title: row.title, key: row.subtitle, navType: row.navType, navId: row.navId })),
+          "Aucun lecteur direct supplémentaire."
+        )) : ""}
         ${derivedLevels.length > 0 ? renderSection("Niveaux hiérarchiques dérivés", "Déclinaisons techniques du champ racine pour représenter les niveaux d’un champ hiérarchique.", renderRefList(
           derivedLevels.map((item) => ({
             title: `${field.label} · niveau ${item.level}`,
@@ -2479,9 +2506,9 @@
           })),
           "Aucun niveau dérivé."
         )) : ""}
-        ${impactTotal > 0 ? renderSection("Propagation possible", "Ce qui risque de bouger si ce champ change. Niveau 1 = impact direct, niveau 2+ = effet en chaîne.", impactAnalysis.levels.map(([depth, nodes]) => renderSection(
+        ${impactTotal > 0 && hasCascadeImpact ? renderSection("Propagation possible", "Ce qui risque de bouger si ce champ change au-delà des lecteurs directs. Niveau 2+ = effet en chaîne.", impactAnalysis.levels.filter(([depth]) => depth > 1).map(([depth, nodes]) => renderSection(
           `Niveau ${depth}`,
-          depth === 1 ? "Dépendances directes de ce champ." : `Propagation indirecte via le niveau ${depth - 1}.`,
+          `Propagation indirecte via le niveau ${depth - 1}.`,
           renderRefList(nodes.map((node) => ({
             title: node.kind === "field"
               ? (state.atlas.fieldsByKey[node.id]?.label || node.id)
@@ -2512,18 +2539,10 @@
             }).join("")}
           </div>
         `) : ""}
-        ${renderSection("Ce qui dépend de ce champ", "Objets du graphe connu qui utilisent ce champ.", renderRefList(
-          usageRows.map((row) => ({ title: row.title, key: row.subtitle, navType: row.navType, navId: row.navId })),
-          "Rien ne référence ce champ."
-        ))}
         ${renderSection("Graphe de dépendances", "Lecture visuelle proche du local : dépendances lues, champ analysé, objets impactés.", renderMermaidGraph(buildFieldGraphSpec(field, dependencyRows, usageDetails.graphImpact)))}
         ${field.code ? renderSection("Formule Liquid", "Code source du champ calculé, tel qu’il est configuré côté Eventmaker.", `
           <pre class="atlas-code">${escapeHtml(field.code)}</pre>
         `) : ""}
-        ${renderSection("Alertes", "Anomalies détectées dans la formule Liquid ou références impossibles à résoudre.", renderRefList(
-          anomalies.map((entry) => ({ title: entry, key: "à vérifier" })),
-          "Aucune anomalie détectée."
-        ))}
       </div>
     `;
   }
@@ -2962,7 +2981,7 @@
     const impactedPages = (graphImpact?.pages || []).filter(Boolean);
     const impactedAutomations = (graphImpact?.automations || []).filter(Boolean);
     const total = dependencyKeys.length + impactedFields.length + impactedSegments.length + impactedForms.length + impactedEmails.length + impactedPages.length + impactedAutomations.length;
-    if (total < 2) return null;
+    if (total < 1) return null;
 
     const lines = [
       "graph LR",
@@ -4384,6 +4403,10 @@
     render();
   }
 
+  function ensurePanelOpen() {
+    if (!state.isOpen) togglePanel();
+  }
+
   function handleFilterAction(action, value) {
     if (action === "noop") return;
     if (action === "reset-filters") {
@@ -4717,7 +4740,7 @@
     if (state.activeTab === "fields") {
       const field = item.raw;
       const badges = [];
-      badges.push(renderBadge(field.fieldKind === "native" ? "natif" : field.fieldKind === "api_property" ? "api" : "custom", field.fieldKind === "native" ? "is-neutral" : field.fieldKind === "api_property" ? "is-warning" : "is-info"));
+      badges.push(renderBadge(field.fieldKind === "native" ? "natif" : field.fieldKind === "api_property" ? "api" : "custom", field.fieldKind === "native" ? "is-neutral" : field.fieldKind === "api_property" ? "is-api" : "is-info"));
       if (window.AtlasCore.hasFieldAnomaly(state.atlas, field)) badges.push(renderBadge("⚠", "is-warning"));
       if (field.code) badges.push(renderBadge("calc", "is-info"));
       return badges.join("");
@@ -4929,4 +4952,17 @@
       }
     `;
   }
+
+  window.AtlasExtension = {
+    open: function() {
+      ensurePanelOpen();
+      return true;
+    },
+    navigateTo: function(type, id) {
+      if (!type || !id) return false;
+      ensurePanelOpen();
+      navigateToEntity(type, id);
+      return true;
+    }
+  };
 })();
